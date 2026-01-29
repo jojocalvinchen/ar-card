@@ -2,12 +2,12 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8">
-		<!-- 1. 隔離腳本：必須放在最前面 -->
+		<!-- 1. 強制隔離腳本：放置於最頂端 -->
 		<script src="coi-serviceworker.js"></script>
 		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
 		<title>AR_Scratch_System</title>
 		<style>
-/* 保留您原始的所有樣式 */
+/* 保留原始樣式 */
 html, body, #canvas {
 	margin: 0;
 	padding: 0;
@@ -23,7 +23,7 @@ body {
 
 #canvas {
 	display: block;
-	/* 2. 強制畫布透明以顯示相機 */
+	/* 強制背景透明 */
 	background-color: transparent !important;
 }
 
@@ -49,29 +49,13 @@ body {
 	justify-content: center;
 	align-items: center;
 	visibility: hidden;
+	z-index: 10;
 }
 
 #status-splash {
 	max-height: 100%;
 	max-width: 100%;
 	margin: auto;
-}
-
-#status-splash.show-image--true { display: block; }
-#status-splash.show-image--false { display: none; }
-
-#status-splash.fullsize--true {
-	height: 100%;
-	width: 100%;
-	object-fit: contain;
-}
-
-#status-splash.use-filter--false {
-	image-rendering: pixelated;
-}
-
-#status-progress, #status-notice {
-	display: none;
 }
 
 #status-progress {
@@ -91,10 +75,11 @@ body {
 	overflow: hidden;
 	padding: 1rem;
 	text-align: center;
-	z-index: 1;
+	z-index: 11;
+	display: none;
 }
 
-/* 3. 新增相機專用樣式 */
+/* 相機畫面樣式 */
 video#webcam {
 	position: fixed;
 	top: 0;
@@ -109,8 +94,8 @@ video#webcam {
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 		<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 
-		<!-- 4. 嵌入相機啟動腳本 -->
 		<script>
+			// 相機啟動邏輯
 			async function initARCamera() {
 				try {
 					const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -122,12 +107,10 @@ video#webcam {
 					console.error("相機啟動失敗:", err);
 				}
 			}
-			// 網頁載入時啟動
 			window.addEventListener('load', initARCamera);
 		</script>
 	</head>
 	<body>
-		<!-- 5. 新增相機視訊元件 -->
 		<video id="webcam" autoplay playsinline></video>
 
 		<canvas id="canvas">
@@ -146,7 +129,7 @@ video#webcam {
 
 		<script src="index.js"></script>
 		<script>
-/* 保留 Godot 原始的所有啟動邏輯 */
+/* 核心啟動邏輯 */
 const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":500032,"index.wasm":36145869},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
@@ -160,11 +143,9 @@ const engine = new Engine(GODOT_CONFIG);
 	let statusMode = '';
 
 	function setStatusMode(mode) {
-		if (statusMode === mode || !initializing) {
-			return;
-		}
+		if (statusMode === mode || !initializing) return;
 		if (mode === 'hidden') {
-			statusOverlay.remove();
+			statusOverlay.style.display = 'none';
 			initializing = false;
 			return;
 		}
@@ -175,11 +156,8 @@ const engine = new Engine(GODOT_CONFIG);
 	}
 
 	function setStatusNotice(text) {
-		while (statusNotice.lastChild) {
-			statusNotice.removeChild(statusNotice.lastChild);
-		}
-		const lines = text.split('\n');
-		lines.forEach((line) => {
+		while (statusNotice.lastChild) statusNotice.removeChild(statusNotice.lastChild);
+		text.split('\n').forEach((line) => {
 			statusNotice.appendChild(document.createTextNode(line));
 			statusNotice.appendChild(document.createElement('br'));
 		});
@@ -187,47 +165,30 @@ const engine = new Engine(GODOT_CONFIG);
 
 	function displayFailureNotice(err) {
 		console.error(err);
-		if (err instanceof Error) {
-			setStatusNotice(err.message);
-		} else if (typeof err === 'string') {
-			setStatusNotice(err);
-		} else {
-			setStatusNotice('An unknown error occurred.');
-		}
+		setStatusNotice(err instanceof Error ? err.message : (typeof err === 'string' ? err : 'An unknown error occurred.'));
 		setStatusMode('notice');
 		initializing = false;
 	}
 
-	const missing = Engine.getMissingFeatures({
-		threads: GODOT_THREADS_ENABLED,
-	});
+	// 檢查 SharedArrayBuffer 是否可用
+	if (!window.crossOriginIsolated && GODOT_THREADS_ENABLED) {
+		console.warn("環境尚未隔離，嘗試重新載入...");
+	}
+
+	const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
 
 	if (missing.length !== 0) {
-		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
-			let serviceWorkerRegistrationPromise;
-			try {
-				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
-			} catch (err) {
-				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
-			}
-			Promise.race([
-				serviceWorkerRegistrationPromise.then((registration) => {
-					if (registration != null) {
-						return Promise.reject(new Error('Service worker already exists.'));
-					}
-					return registration;
-				}).then(() => engine.installServiceWorker()),
-				new Promise((resolve) => {
-					setTimeout(() => resolve(), 2000);
-				}),
-			]).then(() => {
-				window.location.reload();
-			}).catch((err) => {
-				console.error('Error while registering service worker:', err);
-			});
+		// 如果缺少功能，嘗試透過 Service Worker 解決
+		if ('serviceWorker' in navigator) {
+			navigator.serviceWorker.getRegistration().then((reg) => {
+				if (!reg) {
+					engine.installServiceWorker().then(() => window.location.reload());
+				} else {
+					displayFailureNotice('Required features missing: ' + missing.join(', '));
+				}
+			}).catch(displayFailureNotice);
 		} else {
-			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
-			displayFailureNotice(missingMsg + missing.join('\n'));
+			displayFailureNotice('Required features missing: ' + missing.join(', '));
 		}
 	} else {
 		setStatusMode('progress');
@@ -236,9 +197,6 @@ const engine = new Engine(GODOT_CONFIG);
 				if (current > 0 && total > 0) {
 					statusProgress.value = current;
 					statusProgress.max = total;
-				} else {
-					statusProgress.removeAttribute('value');
-					statusProgress.removeAttribute('max');
 				}
 			},
 		}).then(() => {
