@@ -2,208 +2,145 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8">
-		<!-- 1. 強制隔離腳本：放置於最頂端 -->
 		<script src="coi-serviceworker.js"></script>
 		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
 		<title>AR_Scratch_System</title>
 		<style>
-/* 保留原始樣式 */
-html, body, #canvas {
-	margin: 0;
-	padding: 0;
-	border: 0;
-}
-
-body {
-	color: white;
-	background-color: black;
-	overflow: hidden;
-	touch-action: none;
-}
-
-#canvas {
-	display: block;
-	/* 強制背景透明 */
-	background-color: transparent !important;
-}
-
-#canvas:focus {
-	outline: none;
-}
-
-#status, #status-splash, #status-progress {
-	position: absolute;
-	left: 0;
-	right: 0;
-}
-
-#status, #status-splash {
-	top: 0;
-	bottom: 0;
-}
-
-#status {
-	background-color: #242424;
-	display: flex;
-	flex-direction: column;
-	justify-content: center;
-	align-items: center;
-	visibility: hidden;
-	z-index: 10;
-}
-
-#status-splash {
-	max-height: 100%;
-	max-width: 100%;
-	margin: auto;
-}
-
-#status-progress {
-	bottom: 10%;
-	width: 50%;
-	margin: 0 auto;
-}
-
-#status-notice {
-	background-color: #5b3943;
-	border-radius: 0.5rem;
-	border: 1px solid #9b3943;
-	color: #e0e0e0;
-	font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
-	line-height: 1.3;
-	margin: 0 2rem;
-	overflow: hidden;
-	padding: 1rem;
-	text-align: center;
-	z-index: 11;
-	display: none;
-}
-
-/* 相機畫面樣式 */
-video#webcam {
-	position: fixed;
-	top: 0;
-	left: 0;
-	width: 100vw;
-	height: 100vh;
-	object-fit: cover;
-	z-index: -1;
-	pointer-events: none;
-}
-		</style>
-		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
-		<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
-
-		<script>
-			// 相機啟動邏輯
-			async function initARCamera() {
-				try {
-					const stream = await navigator.mediaDevices.getUserMedia({ 
-						video: { facingMode: "environment" } 
-					});
-					const video = document.getElementById('webcam');
-					if (video) video.srcObject = stream;
-				} catch (err) {
-					console.error("相機啟動失敗:", err);
-				}
+			/* 基礎樣式重置 */
+			html, body {
+				margin: 0;
+				padding: 0;
+				border: 0;
+				width: 100%;
+				height: 100%;
+				overflow: hidden;
+				background-color: transparent; /* 關鍵：本體透明 */
 			}
-			window.addEventListener('load', initARCamera);
-		</script>
+
+			/* 相機畫面置底 */
+			video#webcam {
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100vw;
+				height: 100vh;
+				object-fit: cover;
+				z-index: -1; /* 在最下面 */
+				pointer-events: none;
+				background: black; /* 載入前預設黑色 */
+			}
+
+			/* Godot 畫布 */
+			#canvas {
+				display: block;
+				width: 100vw;
+				height: 100vh;
+				background-color: transparent !important; /* 強制透明 */
+				z-index: 1; /* 在相機上面 */
+			}
+
+			#canvas:focus {
+				outline: none;
+			}
+
+			/* 讀取進度條樣式 */
+			#status {
+				position: absolute;
+				top: 0; left: 0; right: 0; bottom: 0;
+				background-color: rgba(36, 36, 36, 0.9);
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+				align-items: center;
+				z-index: 10;
+			}
+
+			#status-progress {
+				width: 50%;
+				height: 20px;
+			}
+
+			#status-notice {
+				color: white;
+				margin-top: 20px;
+				padding: 10px;
+				background: rgba(155, 57, 67, 0.8);
+				border-radius: 5px;
+				display: none;
+			}
+		</style>
 	</head>
 	<body>
-		<video id="webcam" autoplay playsinline></video>
+		<!-- 1. 放置相機標籤 -->
+		<video id="webcam" autoplay playsinline muted></video>
 
-		<canvas id="canvas">
-			Your browser does not support the canvas tag.
-		</canvas>
-
-		<noscript>
-			Your browser does not support JavaScript.
-		</noscript>
+		<!-- 2. Godot 畫布 -->
+		<canvas id="canvas">您的瀏覽器不支持 Canvas。</canvas>
 
 		<div id="status">
-			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
 			<progress id="status-progress"></progress>
 			<div id="status-notice"></div>
+			<p style="color:white;">AR 載入中，請稍候...</p>
 		</div>
 
 		<script src="index.js"></script>
 		<script>
-/* 核心啟動邏輯 */
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":500032,"index.wasm":36145869},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
-const GODOT_THREADS_ENABLED = false;
-const engine = new Engine(GODOT_CONFIG);
-
-(function () {
-	const statusOverlay = document.getElementById('status');
-	const statusProgress = document.getElementById('status-progress');
-	const statusNotice = document.getElementById('status-notice');
-
-	let initializing = true;
-	let statusMode = '';
-
-	function setStatusMode(mode) {
-		if (statusMode === mode || !initializing) return;
-		if (mode === 'hidden') {
-			statusOverlay.style.display = 'none';
-			initializing = false;
-			return;
-		}
-		statusOverlay.style.visibility = 'visible';
-		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
-		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
-		statusMode = mode;
-	}
-
-	function setStatusNotice(text) {
-		while (statusNotice.lastChild) statusNotice.removeChild(statusNotice.lastChild);
-		text.split('\n').forEach((line) => {
-			statusNotice.appendChild(document.createTextNode(line));
-			statusNotice.appendChild(document.createElement('br'));
-		});
-	}
-
-	function displayFailureNotice(err) {
-		console.error(err);
-		setStatusNotice(err instanceof Error ? err.message : (typeof err === 'string' ? err : 'An unknown error occurred.'));
-		setStatusMode('notice');
-		initializing = false;
-	}
-
-	// 檢查 SharedArrayBuffer 是否可用
-	if (!window.crossOriginIsolated && GODOT_THREADS_ENABLED) {
-		console.warn("環境尚未隔離，嘗試重新載入...");
-	}
-
-	const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
-
-	if (missing.length !== 0) {
-		// 如果缺少功能，嘗試透過 Service Worker 解決
-		if ('serviceWorker' in navigator) {
-			navigator.serviceWorker.getRegistration().then((reg) => {
-				if (!reg) {
-					engine.installServiceWorker().then(() => window.location.reload());
-				} else {
-					displayFailureNotice('Required features missing: ' + missing.join(', '));
+			// 啟動相機函數
+			async function startCamera() {
+				const video = document.getElementById('webcam');
+				try {
+					const stream = await navigator.mediaDevices.getUserMedia({ 
+						video: { 
+							facingMode: "environment", // 使用後鏡頭
+							width: { ideal: 1280 },
+							height: { ideal: 720 }
+						} 
+					});
+					video.srcObject = stream;
+					console.log("相機已啟動");
+				} catch (err) {
+					console.error("無法存取相機: ", err);
+					// 如果失敗，可能是沒給權限
+					alert("請允許相機權限以啟用 AR 功能。");
 				}
-			}).catch(displayFailureNotice);
-		} else {
-			displayFailureNotice('Required features missing: ' + missing.join(', '));
-		}
-	} else {
-		setStatusMode('progress');
-		engine.startGame({
-			'onProgress': function (current, total) {
-				if (current > 0 && total > 0) {
-					statusProgress.value = current;
-					statusProgress.max = total;
-				}
-			},
-		}).then(() => {
-			setStatusMode('hidden');
-		}, displayFailureNotice);
-	}
-}());
+			}
+
+			// 啟動 Godot 引擎
+			const GODOT_CONFIG = {
+				"args": [],
+				"canvasResizePolicy": 2,
+				"executable": "index",
+				"fileSizes": {"index.pck": 500032, "index.wasm": 36145869},
+				"focusCanvas": true
+			};
+			
+			const engine = new Engine(GODOT_CONFIG);
+
+			(function() {
+				const statusOverlay = document.getElementById('status');
+				const statusProgress = document.getElementById('status-progress');
+				const statusNotice = document.getElementById('status-notice');
+
+				// 1. 先嘗試啟動相機
+				startCamera();
+
+				// 2. 啟動 Godot
+				engine.startGame({
+					'onProgress': function (current, total) {
+						if (total > 0) {
+							statusProgress.value = current;
+							statusProgress.max = total;
+						}
+					},
+				}).then(() => {
+					statusOverlay.style.display = 'none';
+					// 進入遊戲後再次確保相機在動
+					document.getElementById('webcam').play();
+				}).catch((err) => {
+					statusNotice.innerText = err.message;
+					statusNotice.style.display = 'block';
+				});
+			})();
 		</script>
 	</body>
 </html>
